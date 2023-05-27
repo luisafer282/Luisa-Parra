@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <title>Location-based AR.js demo</title>
+    <script src= "https://aframe.io/releases/1.0.4/aframe.min.js"></script>
+    <script type='text/javascript' src='https://raw.githack.com/AR-js-org/AR.js/master/three.js/build/ar-threex-location-only.js'></script>
+    <script type='text/javascript' src='https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js'></script>
+    <script>
+            // Component to handle each POI: look-at the camera, update distance and update size
+            AFRAME.registerComponent('poi', {
+                schema: {
+                    distText: { type: 'string', default: 'poi' },
+                },
+
+                _cam3D: null,
+                _pos: null,
+                _posCam3D: null,
+
+                init: function() {
+                    this._cam3D = document.querySelector("a-camera").object3D;
+                    this._pos = new THREE.Vector3();
+                    this._posCam3D = new THREE.Vector3();
+                },
+
+                tick: function () {
+                    // Update camera position
+                    this._cam3D.getWorldPosition(this._posCam3D);
+                    
+                    // Update current position
+                    const el = this.el.object3D;
+                    el.getWorldPosition(this._pos);
+                    
+                    // LookAt the camera
+                    el.lookAt(this._posCam3D.x, this._pos.y, this._posCam3D.z);
+
+                    // Update distance text
+                    const textDist = document.getElementById(this.data.distText);
+                    const dist = this._pos.distanceTo(this._posCam3D);
+                    textDist.setAttribute("value","" + parseFloat(dist).toFixed(2) + " m.");
+
+                    // Compute size
+                    this.el.setAttribute("scale",{x: dist*0.01, y:dist*0.01, z:dist*0.01 })
+                }
+                
+            });
+
+            // Component to create POIs
+            AFRAME.registerComponent("load-pois", {
+
+                loadedPois: false,
+
+                init: function() {
+
+                    // Register GPS position listener
+                    const el = document.querySelector("[gps-new-camera]");
+                    el.addEventListener("gps-camera-update-position", (e)=> {
+                        console.log ("new camera position " + e.detail.position.latitude + ", " + e.detail.position.longitude);
+                        if (this.loadedPois == false) {
+                            this.getPOIS(e.detail.position.latitude, e.detail.position.longitude);
+                        }
+                    });
+                                    
+                    // For debug ETSE-UV
+                    //const latVal = 39.512784961826604;
+                    //const longVal = -0.4245460287443896;
+                    //this.getPOIS(latVal, longVal);
+
+                    // For debug Centro Valencia
+                    //const latVal = 39.47402866521183;
+                    //const longVal = -0.3762567909771192;
+                    //this.getPOIS(latVal, longVal);
+                },
+
+                getPOIS: function(lat, long) {
+  
+                    // Download pois data from open street maps
+                    fetch(`https://valencia.opendatasoft.com/api/records/1.0/search/?dataset=valenbisi-disponibilitat-valenbisi-dsiponibilidad&rows=10&q=&geofilter.distance=${lat},${long},5000`)
+                    .then (response => {
+                        response.json()
+                        .then( pois => {
+
+                            cont = 0;
+                            // for each feature create a POI
+                            pois.features.map( (feature, index) => {
+                                    const address = feature.fields.address;
+                                    const available = feature.fields.available;
+                                    const free = feature.fields.free;
+                                    const geo_point_2d = feature.fields.geo_point_2d;
+                                    // Las variables almacenan los datos extraídos para su posterior uso
+
+                                //console.log(feature.properties);
+                                //if (feature.properties.hasOwnProperty("name"))
+                                //{
+                                    // Create gps-entity-place
+                                    const poi = document.createElement("a-entity");
+                                    poi.setAttribute('gps-new-entity-place', {
+                                        latitude: feature.fields.geo_point_2d[0],
+                                        longitude: feature.fields.geo_point_2d[1]
+                                    }); 
+                                    const tam = 3;
+                                    const id = "POI_" + index;
+                                    poi.setAttribute("id", id);
+                                    poi.setAttribute("scale",{x:tam, y:tam, z:tam});
+                                    poi.setAttribute("poi", "distText:"+id+"_distText");
+
+                                    // Add geometry: sign post
+                                    const post = document.createElement("a-box");
+                                    post.setAttribute("scale", {x: 2, y: 5, z: 2});
+                                    post.setAttribute("position", {x:0, y:2.5, z:0});
+                                    post.setAttribute('material', { color: 'red' } );
+                                    poi.appendChild(post); 
+
+                                    // Add geometry: sign background
+                                    const back = document.createElement("a-box");
+                                    back.setAttribute("scale", {x: 25, y: 6, z: 2});
+                                    back.setAttribute("position", {x:0, y:8, z:0});
+                                    back.setAttribute('material', { color: 'red' } );
+                                    poi.appendChild(back); 
+
+                                    // Add text 
+                                    const text = document.createElement("a-text");
+                                    text.setAttribute("position", {x:0, y: 9, z: 3});
+                                    text.setAttribute("value", feature.properties.name);
+                                    text.setAttribute("value", "Parada: "+feature.fields.address+ " \n Huecos libres: "+feature.fields.free+" \n Bicis libres: "+feature.fields.available);
+                                    text.setAttribute("align","center");
+                                    text.setAttribute("width", 40);
+                                    text.setAttribute("wrapcount", 20);
+                                    poi.appendChild(text); 
+                                    
+                                    // Add distance text
+                                    const textDist = document.createElement("a-text");
+                                    textDist.setAttribute("id", id+"_distText");
+                                    textDist.setAttribute("position", {x:0, y: 7, z: 3});
+                                    textDist.setAttribute("value", "__ m.");
+                                    textDist.setAttribute("align","center");
+                                    textDist.setAttribute("width", 40);
+                                    textDist.setAttribute("wrapcount", 20);
+                                    poi.appendChild(textDist); 
+                                    
+                                    this.el.appendChild(poi);
+                                    cont ++;
+                                //}
+
+                            });      
+
+                            console.log ("loaded " + cont + " POIs");
+                            this.loadedPois = true;
+                        })
+                    })
+
+                    
+                },
+                
+            });
+
+    </script>
+  </head>
+
+  <body>
+
+    <a-scene vr-mode-ui='enabled: false' arjs='sourceType: webcam; videoTexture: true; debugUIEnabled: true' renderer='antialias: true; alpha: true' >
+        
+        <!-- For debug Centro Valencia -->
+        <!-- <a-camera id="gps-new-camera" gps-new-camera='gpsMinDistance: 5; simulateLatitude: 39.47402866521183; simulateLongitude: -0.3762567909771192' camera="far:1000000;"></a-camera> -->
+        
+        <a-camera id="gps-new-camera" gps-new-camera="gpsMinDistance: 5" camera="far:10000;"></a-camera>
+
+        <!-- Plaza del ayuntamiento de Valencia -->
+        <a-entity material='color: red' geometry='primitive: box' gps-entity-place="latitude: 39.470021834872675; longitude: -0.37635147292514465" scale="100 100 100"></a-entity>
+
+        <!-- Load POIs -->
+        <a-entity id="POIS" load-pois></a-entity>
+
+    </a-scene>
+
+  </body>
+</html>
